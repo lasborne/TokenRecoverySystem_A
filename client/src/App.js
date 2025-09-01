@@ -180,7 +180,7 @@ function App() {
   const [multiStartLoading, setMultiStartLoading] = useState(false);
   const [multiStopLoading, setMultiStopLoading] = useState(false);
   const [activeMultiSession, setActiveMultiSession] = useState(null); // { sessionId, networks }
-  const [multiRecoveryStatus, setMultiRecoveryStatus] = useState({
+  const [/* multiRecoveryStatus */, setMultiRecoveryStatus] = useState({
     isActive: false,
     lastCheck: null,
     checking: false
