@@ -36,6 +36,11 @@
     "hardhat": "^2.25.0",
     "nodemon": "^3.0.1"
   },
+  "eslintConfig": {
+    "rules": {
+      "no-unused-vars": "warn"
+    }
+  },
   "keywords": [
     "web3",
     "ethereum",
