@@ -12,6 +12,7 @@ const router = express.Router();
 const recoveryService = new RecoveryService();
 const autoRecoveryService = new AutoRecoveryService();
 const fetch = require('node-fetch');
+const { withLock } = require('../utils/redis');
 
 /**
  * Health check endpoint
@@ -478,6 +479,43 @@ router.get('/system-status', (req, res) => {
     res.status(500).json({
       error: error.message || 'Internal server error'
     });
+  }
+});
+
+/**
+ * Protected internal endpoint: run one monitoring iteration
+ * POST /api/internal/monitor-once
+ */
+router.post('/internal/monitor-once', async (req, res) => {
+  try {
+    const token = req.headers['x-internal-token'] || req.query.token;
+    if (!process.env.INTERNAL_API_TOKEN || token !== process.env.INTERNAL_API_TOKEN) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const result = await withLock('locks:monitor-once', 25000, async () => {
+      // Call the same logic used by the scheduled job
+      const serverMain = require('../../server.js');
+      if (typeof serverMain.monitorOnce === 'function') {
+        return await serverMain.monitorOnce();
+      }
+      // Fallback: access service directly
+      const active = recoveryService.getActiveRecoveries();
+      let processed = 0;
+      for (const r of active) {
+        await recoveryService.monitorAndClaimAirdrops(r.hackedWallet, r.network);
+        processed++;
+      }
+      return { processed };
+    });
+
+    if (result?.skipped) {
+      return res.json({ success: true, skipped: true, message: result.message });
+    }
+    return res.json({ success: true, result });
+  } catch (error) {
+    console.error('internal monitor-once error:', error);
+    return res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 

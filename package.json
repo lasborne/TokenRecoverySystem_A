@@ -13,7 +13,9 @@
     "test:watch": "npx hardhat test --watch",
     "setup-env": "node scripts/setup-env.js",
     "compile": "npx hardhat compile",
-    "deploy": "npx hardhat run scripts/deploy.js --network localhost"
+    "deploy": "npx hardhat run scripts/deploy.js --network localhost",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.3.0",
@@ -29,7 +31,9 @@
     "helmet": "^7.1.0",
     "node-cron": "^3.0.3",
     "node-fetch": "^2.6.9",
-    "web3": "^4.2.2"
+    "web3": "^4.2.2",
+    "redis": "^4.6.12",
+    "hono": "^4.5.10"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.0.0",

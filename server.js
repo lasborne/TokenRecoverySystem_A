@@ -9,6 +9,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const cron = require('node-cron');
+const { withLock } = require('./server/utils/redis');
 const path = require('path');
 require('dotenv').config();
 
@@ -81,52 +82,54 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Scheduled task to monitor recoveries
-const scheduleRecoveryMonitoring = () => {
-  // Run every 30 seconds
-  cron.schedule('*/30 * * * * *', async () => {
+// One-iteration monitor function (used by scheduler/cron)
+const monitorOnce = async () => {
+  console.log('Running scheduled recovery monitoring...');
+  const activeRecoveries = recoveryService.getActiveRecoveries();
+  if (activeRecoveries.length === 0) {
+    console.log('No active recoveries found to monitor');
+    return { processed: 0 };
+  }
+  let processed = 0;
+  for (const recovery of activeRecoveries) {
     try {
-      console.log('Running scheduled recovery monitoring...');
-      
-      const activeRecoveries = recoveryService.getActiveRecoveries();
-      
-      if (activeRecoveries.length === 0) {
-        console.log('No active recoveries found to monitor');
-        return;
+      if (!recovery.hackedWallet || !recovery.network) {
+        console.warn('Skipping invalid recovery: Missing required fields', {
+          id: recovery.id,
+          hasWallet: !!recovery.hackedWallet,
+          hasNetwork: !!recovery.network
+        });
+        continue;
       }
-      
-      // Process each recovery with improved error handling
-      for (const recovery of activeRecoveries) {
-        try {
-          if (!recovery.hackedWallet || !recovery.network) {
-            console.warn(`Skipping invalid recovery: Missing required fields`, 
-              { id: recovery.id, hasWallet: !!recovery.hackedWallet, hasNetwork: !!recovery.network });
-            continue;
-          }
-          
-          console.log(`Monitoring recovery for ${recovery.hackedWallet} on ${recovery.network}...`);
-          
-          const result = await recoveryService.monitorAndClaimAirdrops(
-            recovery.hackedWallet, 
-            recovery.network
-          );
-          
-          if (!result.success && result.error) {
-            console.warn(`Monitoring result for ${recovery.hackedWallet}: ${result.error}`);
-          }
-        } catch (error) {
-          // Don't let one failed recovery stop the others
-          console.error(`Error monitoring recovery ${recovery.id || recovery.hackedWallet}:`, error.message);
-        }
+      console.log(`Monitoring recovery for ${recovery.hackedWallet} on ${recovery.network}...`);
+      const result = await recoveryService.monitorAndClaimAirdrops(
+        recovery.hackedWallet,
+        recovery.network
+      );
+      if (!result.success && result.error) {
+        console.warn(`Monitoring result for ${recovery.hackedWallet}: ${result.error}`);
       }
-      
-      console.log(`Monitored ${activeRecoveries.length} active recoveries`);
+      processed++;
     } catch (error) {
-      console.error('Scheduled monitoring error:', error.message);
+      console.error(`Error monitoring recovery ${recovery.id || recovery.hackedWallet}:`, error.message);
     }
+  }
+  console.log(`Monitored ${processed} recoveries`);
+  return { processed };
+};
+
+// Scheduled task to monitor recoveries (guarded by env and distributed lock)
+const scheduleRecoveryMonitoring = () => {
+  if (String(process.env.ENABLE_INTERNAL_CRON || '').toLowerCase() !== 'true') {
+    console.log('Internal cron disabled. Use an external scheduler to trigger monitoring.');
+    return;
+  }
+  cron.schedule('*/30 * * * * *', async () => {
+    await withLock('locks:monitor-once', 25000, async () => {
+      return await monitorOnce();
+    });
   });
-  
-  console.log('Recovery monitoring scheduled to run every 30 seconds');
+  console.log('Recovery monitoring scheduled to run every 30 seconds (guarded by distributed lock)');
 };
 
 // Start the server
@@ -140,7 +143,7 @@ const startServer = async () => {
       console.log(`🌐 Client available at: http://localhost:${PORT}`);
     });
 
-    // Start scheduled monitoring
+    // Start scheduled monitoring (only if enabled)
     scheduleRecoveryMonitoring();
 
     // Schedule cleanup of old auto recovery sessions (every hour)
@@ -201,3 +204,6 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
   process.exit(1);
 }); 
+
+// Export functions for internal use (avoid circular side effects)
+module.exports = { monitorOnce };

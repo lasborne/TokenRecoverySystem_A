@@ -5,6 +5,7 @@
 
 const fs = require('fs').promises;
 const path = require('path');
+const { getRedisClient } = require('../utils/redis');
 
 // In-memory storage for tokens (in production, use a database)
 const savedTokens = new Map();
@@ -62,6 +63,7 @@ class TokenStorageService {
    */
   async saveTokens(tokens, network) {
     try {
+      const redis = await getRedisClient();
       let savedCount = 0;
       let updatedCount = 0;
 
@@ -92,7 +94,26 @@ class TokenStorageService {
         }
       }
 
-      // Persist to file
+      if (redis) {
+        // Persist to Redis as primary store
+        const pipeline = redis.multi();
+        for (const token of this.savedTokens.values()) {
+          const key = `tokens:${token.network}:${token.address}`;
+          pipeline.hSet(key, {
+            address: token.address,
+            symbol: token.symbol || '',
+            name: token.name || '',
+            network: token.network,
+            decimals: String(token.decimals || 18),
+            createdAt: token.createdAt || '',
+            lastUpdated: token.lastUpdated || '',
+            isHighPriority: token.isHighPriority ? '1' : '0'
+          });
+        }
+        await pipeline.exec();
+      }
+
+      // Persist to file as fallback snapshot
       await this.persistToFile();
 
       return {
@@ -118,7 +139,46 @@ class TokenStorageService {
    */
   async getSavedTokens(network = null) {
     try {
+      const redis = await getRedisClient();
       let tokens = Array.from(this.savedTokens.values());
+
+      // Try to read latest from Redis if available
+      if (redis) {
+        const networks = new Set(tokens.map(t => t.network));
+        if (network) networks.add(network);
+        const refreshed = [];
+        for (const net of networks) {
+          const pattern = `tokens:${net}:*`;
+          let cursor = 0;
+          do {
+            const [newCursor, keys] = await redis.scan(cursor, { MATCH: pattern, COUNT: 100 });
+            cursor = Number(newCursor);
+            if (keys && keys.length) {
+              const pipe = redis.multi();
+              keys.forEach(k => pipe.hGetAll(k));
+              const rows = await pipe.exec();
+              rows.forEach(r => {
+                const v = r;
+                if (v && v.address) {
+                  refreshed.push({
+                    address: (v.address || '').toLowerCase(),
+                    symbol: v.symbol || 'UNKNOWN',
+                    name: v.name || 'Unknown Token',
+                    network: v.network || net,
+                    decimals: Number(v.decimals || 18),
+                    createdAt: v.createdAt || null,
+                    lastUpdated: v.lastUpdated || null,
+                    isHighPriority: v.isHighPriority === '1'
+                  });
+                }
+              });
+            }
+          } while (cursor !== 0);
+        }
+        if (refreshed.length) {
+          tokens = refreshed;
+        }
+      }
 
       // Filter by network if specified
       if (network) {
@@ -158,6 +218,7 @@ class TokenStorageService {
    */
   async deleteSavedTokens(network, tokenAddress = null) {
     try {
+      const redis = await getRedisClient();
       let deletedCount = 0;
 
       if (tokenAddress) {
@@ -180,6 +241,19 @@ class TokenStorageService {
           this.savedTokens.delete(key);
           deletedCount++;
         });
+      }
+
+      if (redis) {
+        if (tokenAddress) {
+          await redis.del(`tokens:${network}:${tokenAddress.toLowerCase()}`);
+        } else {
+          let cursor = 0;
+          do {
+            const [newCursor, keys] = await redis.scan(cursor, { MATCH: `tokens:${network}:*`, COUNT: 100 });
+            cursor = Number(newCursor);
+            if (keys && keys.length) await redis.del(keys);
+          } while (cursor !== 0);
+        }
       }
 
       // Persist to file

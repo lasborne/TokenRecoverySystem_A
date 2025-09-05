@@ -1,51 +1,38 @@
-# Multi-stage build for production deployment
-FROM node:18-alpine AS base
-
-# Install dependencies only when needed
-FROM base AS deps
-# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
-RUN apk add --no-cache libc6-compat
+# Multi-stage build for Express API + React client
+FROM node:18-alpine AS builder
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
-COPY package.json package-lock.json* ./
+# Install root deps (for server build scripts if any)
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Install and build client
+COPY client/package.json client/package-lock.json ./client/
+RUN cd client && npm ci
+
+# Copy source and build client
+COPY . .
+RUN cd client && npm run build
+
+# Runtime image
+FROM node:18-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Install only production deps for server
+COPY package.json package-lock.json ./
 RUN npm ci --only=production
 
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+# Copy server code and built client
+COPY server ./server
+COPY server.js ./server.js
+COPY client/build ./client/build
 
-# Build the application
-RUN npm run build
+# Ensure data directory exists if filesystem fallback is used
+RUN mkdir -p server/data
 
-# Production image, copy all the files and run the app
-FROM base AS runner
-WORKDIR /app
+EXPOSE 5000
+ENV PORT=5000
+ENV HOST=0.0.0.0
 
-ENV NODE_ENV production
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Copy the public folder
-COPY --from=builder /app/public ./public
-
-# Set the correct permission for prerender cache
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
-
-EXPOSE 3000
-
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
-
-CMD ["node", "server.js"] 
+CMD ["node", "server.js"]
