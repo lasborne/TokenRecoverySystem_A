@@ -13,7 +13,7 @@ class_name = "MonitorLock"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["MonitorLock"]
+new_sqlite_classes = ["MonitorLock"]
 
 [triggers]
 crons = ["*/1 * * * *"]
