@@ -21,8 +21,8 @@ import {
 import axios from 'axios';
 import { rescueNow as solanaRescue, closeAta as solanaCloseAta } from './solana/recovery';
 
-// Use proxy configuration from package.json for development
-// The proxy automatically forwards API requests to http://localhost:5000
+// API configuration using environment variables
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 // Helper function to map network keys to chain IDs
 const networkToChainId = {
@@ -38,7 +38,7 @@ const networkToChainId = {
 // Server health check function
 async function checkServerHealth() {
   try {
-    const response = await axios.get('/api/health', { timeout: 5000 });
+    const response = await axios.get(`${API_BASE}/api/health`, { timeout: 5000 });
     return response.data?.status === 'ok';
   } catch (error) {
     return false;
@@ -48,7 +48,7 @@ async function checkServerHealth() {
 // Check if multi-recovery session is actually active on server
 async function checkMultiRecoveryStatus(sessionId) {
   try {
-    const response = await axios.get(`/api/multi-recovery-status/${sessionId}`, { timeout: 5000 });
+    const response = await axios.get(`${API_BASE}/api/multi-recovery-status/${sessionId}`, { timeout: 5000 });
     return response.data?.active === true;
   } catch (error) {
     return false;
@@ -231,7 +231,7 @@ function App() {
       const statuses = {};
       for (const rec of recoveries) {
         try {
-          const resp = await axios.get(`/api/recovery-status/${rec.hackedWallet}`);
+          const resp = await axios.get(`${API_BASE}/api/recovery-status/${rec.hackedWallet}`);
           statuses[rec.hackedWallet] = resp.data;
         } catch (e) {
           // ignore
@@ -269,7 +269,7 @@ function App() {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
           
-          const resp = await axios.post('/api/check-balance', {
+          const resp = await axios.post(`${API_BASE}/api/check-balance`, {
             hackedWalletPrivateKey: autoRescueData.hackedWalletPrivateKey,
             network: autoRescueData.network
           }, { signal: controller.signal });
@@ -399,7 +399,7 @@ function App() {
    */
   const fetchActiveRecoveries = async () => {
     try {
-      const response = await axios.get('/api/active-recoveries');
+      const response = await axios.get(`${API_BASE}/api/active-recoveries`);
       setRecoveries(response.data);
     } catch (error) {
       console.error('Error fetching recoveries:', error);
@@ -470,7 +470,7 @@ function App() {
       
       // First, test if the backend is reachable
       try {
-        const healthCheck = await axios.get('/api/health', { timeout: 5000 });
+        const healthCheck = await axios.get(`${API_BASE}/api/health`, { timeout: 5000 });
         console.log('Backend health check:', healthCheck.data);
       } catch (healthError) {
         console.error('Backend health check failed:', healthError);
@@ -484,7 +484,7 @@ function App() {
       } else {
         payload.nonce = Number(payload.nonce);
       }
-      const response = await axios.post('/api/register-recovery', payload, {
+      const response = await axios.post(`${API_BASE}/api/register-recovery`, payload, {
         timeout: 120000 // 2 minutes timeout
       });
       console.log('Registration response:', response.data);
@@ -525,7 +525,7 @@ function App() {
       console.log('Deactivating recovery with data:', { hackedWallet, network });
       console.log('Recovery object being deactivated:', { hackedWallet, network });
       
-              await axios.post('/api/deactivate-recovery', { hackedWallet, network });
+              await axios.post(`${API_BASE}/api/deactivate-recovery`, { hackedWallet, network });
       toast.success('Recovery deactivated successfully');
       fetchActiveRecoveries();
     } catch (error) {
@@ -1398,7 +1398,7 @@ function App() {
                       priorityTokens: autoRescueData.priorityTokens || [],
                     };
 
-                    const resp = await axios.post('/api/start-multi-recovery', sessionPayload);
+                    const resp = await axios.post(`${API_BASE}/api/start-multi-recovery`, sessionPayload);
                     if (resp.data?.success) {
                       setActiveMultiSession({ sessionId: resp.data.sessionId, networks: resp.data.networks });
                       setAutoRescueResult(resp.data.message || 'Multi-network recovery started');
@@ -1431,7 +1431,7 @@ function App() {
                     } else {
                       payload.nonce = Number(payload.nonce);
                     }
-                    const resp = await axios.post('/api/auto-rescue', payload);
+                    const resp = await axios.post(`${API_BASE}/api/auto-rescue`, payload);
                     setAutoRescueResult(resp.data.message || 'Rescue complete!');
                     setAutoRescueSummary(resp.data.summary || []);
                     setAutoRescueData({ hackedWalletPrivateKey: '', safeWallet: '', network: 'mainnet', nonce: '', priorityTokens: [] });
@@ -1893,7 +1893,7 @@ function App() {
                         if (activeMultiSession) {
                           setMultiStopLoading(true);
                           if (serverStatus.isOnline) {
-                            await axios.post('/api/stop-multi-recovery', { sessionId: activeMultiSession.sessionId });
+                            await axios.post(`${API_BASE}/api/stop-multi-recovery`, { sessionId: activeMultiSession.sessionId });
                           }
                           setActiveMultiSession(null);
                           setMultiRecoveryStatus({
@@ -1903,7 +1903,7 @@ function App() {
                           });
                         } else {
                           if (serverStatus.isOnline) {
-                            await axios.post('/api/cancel-auto-rescue');
+                            await axios.post(`${API_BASE}/api/cancel-auto-rescue`);
                           }
                           setAutoRescueLoading(false);
                         }

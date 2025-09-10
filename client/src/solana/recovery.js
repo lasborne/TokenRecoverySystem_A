@@ -57,7 +57,7 @@ async function resolveWorkingRpcUrl(userRpcUrl, onLog) {
 
   // Prefer server-provided SOLANA_RPC_URL (root .env) so we don't rely on client-side env injection
   try {
-    const r = await fetch('/api/config');
+    const r = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/config`);
     if (r.ok) {
       const cfg = await r.json();
       if (cfg?.solanaRpcUrl) candidates.push(cfg.solanaRpcUrl);
@@ -271,7 +271,7 @@ export async function rescueNow({
       const decimals = mintInfo?.decimals ?? 0;
       let usdPrice = 0;
       try {
-        const resp = await fetch(`/api/solana/token-price?mint=${item.mint.toBase58()}`, { method: 'GET' });
+        const resp = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/solana/token-price?mint=${item.mint.toBase58()}`, { method: 'GET' });
         if (resp.ok) {
           const data = await resp.json();
           usdPrice = Number(data?.usdPrice || 0);
