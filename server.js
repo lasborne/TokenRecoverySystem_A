@@ -169,6 +169,7 @@ const startServer = async () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 API available at: http://localhost:${PORT}/api`);
+      console.log(process.env.CLIENT_URL)
       console.log(`🌐 Client available at: http://localhost:${PORT}`);
     });
 
