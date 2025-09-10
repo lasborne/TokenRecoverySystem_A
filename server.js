@@ -31,8 +31,18 @@ app.set('trust proxy', 1);
 // Security middleware
 app.use(helmet());
 app.use(compression());
+/*
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  credentials: true
+}));
+*/
+app.use(cors({
+  origin: [
+    "https://tokenrecoverysystem.pages.dev",  // allow your frontend
+    "https://tokenrecoverysystem-a.onrender.com" // allow backend self-call if needed
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
 
@@ -47,6 +57,14 @@ const limiter = rateLimit({
   keyGenerator: (req) => {
     return req.ip || req.connection.remoteAddress || 'unknown';
   }
+});
+// Health check route (important for Render + debugging)
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || "development"
+  });
 });
 app.use('/api/', limiter);
 
@@ -169,7 +187,6 @@ const startServer = async () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 API available at: http://localhost:${PORT}/api`);
-      console.log(process.env.CLIENT_URL)
       console.log(`🌐 Client available at: http://localhost:${PORT}`);
     });
 
