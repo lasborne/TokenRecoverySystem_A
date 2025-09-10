@@ -20,16 +20,30 @@ const { withLock } = require('../utils/redis');
  */
 router.get('/health', (req, res) => {
   try {
+    const stats = recoveryService.getStats();
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      version: '1.0.0'
+      version: '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
+      platform: process.platform,
+      nodeVersion: process.version,
+      memory: {
+        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
+        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB'
+      },
+      recoveryStats: {
+        total: stats.total || 0,
+        active: stats.active || 0,
+        networks: Object.keys(stats.byNetwork || {})
+      }
     });
   } catch (error) {
     console.error('Health check error:', error);
     res.status(500).json({
-      error: 'Health check failed'
+      error: 'Health check failed',
+      timestamp: new Date().toISOString()
     });
   }
 });

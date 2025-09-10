@@ -59,13 +59,33 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // API routes
 app.use('/api', apiRoutes);
 
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, 'client/build')));
+// Serve static files from the React app (only if client build exists)
+const clientBuildPath = path.join(__dirname, 'client/build');
+const clientIndexPath = path.join(clientBuildPath, 'index.html');
 
-// Catch-all handler: send back React's index.html file for any non-API routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
-});
+if (require('fs').existsSync(clientBuildPath)) {
+  app.use(express.static(clientBuildPath));
+  
+  // Catch-all handler: send back React's index.html file for any non-API routes
+  app.get('*', (req, res) => {
+    res.sendFile(clientIndexPath);
+  });
+} else {
+  // Backend-only deployment - return API info for non-API routes
+  app.get('*', (req, res) => {
+    res.json({
+      message: 'Token Recovery System API',
+      version: '1.0.0',
+      endpoints: {
+        health: '/api/health',
+        registerRecovery: '/api/register-recovery',
+        activeRecoveries: '/api/active-recoveries',
+        documentation: 'https://github.com/lasborne/TokenRecoverySystem_A'
+      },
+      status: 'Backend-only deployment - Frontend not included'
+    });
+  });
+}
 
 // Global error handling middleware
 app.use((error, req, res, next) => {
@@ -75,6 +95,15 @@ app.use((error, req, res, next) => {
   const errorMessage = process.env.NODE_ENV === 'production' 
     ? 'Internal server error' 
     : error.message;
+  
+  // Handle specific error types
+  if (error.code === 'ENOENT') {
+    console.warn('File not found error (non-critical):', error.path);
+    return res.status(404).json({
+      error: 'Resource not found',
+      timestamp: new Date().toISOString()
+    });
+  }
   
   res.status(500).json({
     error: errorMessage,
